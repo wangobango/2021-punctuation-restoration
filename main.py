@@ -1,4 +1,5 @@
 from os import sep
+from typing import Tuple
 from utils import Vocabulary
 import pandas as pd
 import string
@@ -25,21 +26,61 @@ def map_fun(el):
 
 def list_to_string(list):
     return ' '.join(map(map_fun, list))
+
+def solve(s):
+    seen = s[0]
+    ans = s[0]
+    for i in s[1:]:
+        if i != seen:
+            ans += i
+            seen = i
+    return ans
      
-def transform_input(data, model: MarkovChain, context_size: int) -> list:
+def transform_input(data, model: MarkovChain, context_size: int, threshold: int) -> list:
     transformed = []
     for row in data:
         tokenized = word_tokenize(row)
         new_row = []
         for i in range(0, len(tokenized) - context_size - 1):
             context = tokenized[i: i + context_size]
-            draw = model.predict(context, 5)
+            draw = model.predict(context, 5, threshold)
             new_row.append(context)
             for word in draw:
                 if word in string.punctuation:
                     new_row.append(word)
-        transformed.append(list_to_string(new_row))
+                    break
+        transformed.append(solve(list_to_string(new_row)))
     return transformed
+
+def transform_and_calculate_accuracy(data, expected, model: MarkovChain, context_size: int, threshold: int) -> int:
+    # location -> (row_idx, char_idx, punctuation_mark)
+    expected_mark_location = [] 
+
+    for row_idx, row in enumerate(expected):
+        for word_idx, word in enumerate(word_tokenize(row)):
+            if word in string.punctuation:
+                expected_mark_location.append((row_idx, word_idx, word))
+         
+    tp = 0
+    fp = 0
+    tn = 0
+    fn = 0
+    for location in expected_mark_location:
+        row_idx, char_idx, punctuation_mark = location
+        row = word_tokenize(data[row_idx])
+        context = row[char_idx - context_size: char_idx]
+        draw = model.predict(context, 1, threshold)
+        if len(draw) > 0:
+            if draw[0] == punctuation_mark:
+                tp += 1
+            # elif draw != punctuation_mark and draw in string.punctuation:
+            #     fp += 1
+            # elif draw != punctuation_mark and draw in string.punctuation:
+            #     fn += 1
+            elif draw[0] != punctuation_mark and draw[0] in string.punctuation:
+                tn += 1
+
+    return tp / (tp + tn)
 
 pathData = "train/in.tsv"
 pathExpected = "train/expected.tsv"
@@ -54,11 +95,12 @@ expected.columns = ['FixedOutput']
 vocabulary = Vocabulary()
 vocabulary.create_vocab(expected['FixedOutput'])
 context_size = 1
+threshold = 0.9
 
 model = MarkovChain(context_size, expected['FixedOutput'], vocabulary)
 model.fit()
 
-transformed = transform_input(data['ASROutput'], model, context_size)
+transformed = transform_input(data['ASROutput'], model, context_size, threshold)
 
 print("Initial wer")
 print(calculate_wer(expected['FixedOutput'], data['ASROutput']))
@@ -66,9 +108,8 @@ print(calculate_wer(expected['FixedOutput'], data['ASROutput']))
 print("Final wer")
 print(calculate_wer(expected['FixedOutput'], transformed))
 
+print("Accuracy:")
+print(transform_and_calculate_accuracy(data['ASROutput'], expected['FixedOutput'], model, context_size, threshold))
+
 df = pd.DataFrame(transformed)
 df.to_csv("train/out.tsv", sep='\t')
-
-# X = np.asarray(list(itertools.chain.from_iterable([word_tokenize(x) for x in expected['FixedOutput']])))
-# model = hmm.MultinomialHMM()
-# model.fit(X.reshape(-1, 1))

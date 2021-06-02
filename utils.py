@@ -69,7 +69,7 @@ class MarkovChain():
     def get_vector(self) -> dict:
         return self.vector
                 
-    def predict(self, data: list, num_of_items_to_pick: int) -> str:
+    def predict(self, data: list, num_of_items_to_pick: int, threshold: int) -> str:
         data = self.__make_immutable([self.__preprocess(x) for x in data])
         if data in self.vector:
             values = np.asarray(list(self.vector[data].values()))
@@ -77,7 +77,11 @@ class MarkovChain():
                 return ''
             if np.count_nonzero(values) == 0:
                 return ''
-            keys = list(self.vector[data].keys())
+            keys = np.asarray(list(self.vector[data].keys()))
+            thresh_value = np.max(values) * threshold
+            filter_arr = np.asarray(values >= thresh_value)
+            keys = keys[filter_arr]
+            values = values[filter_arr]
             normalized_probs = values / np.sum(values)
             draw = np.random.choice(keys, size=num_of_items_to_pick, p=normalized_probs)
             return draw
